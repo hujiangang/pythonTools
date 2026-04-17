@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pick watermark region</title>
+  <style>
+    body {
+      margin: 24px;
+      font-family: Consolas, "Microsoft YaHei", sans-serif;
+      background: #111;
+      color: #eee;
+    }
+    .wrap {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      border: 1px solid #555;
+    }
+    img {
+      display: block;
+      max-width: min(100%, 1280px);
+      height: auto;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    canvas {
+      position: absolute;
+      inset: 0;
+      cursor: crosshair;
+    }
+    textarea {
+      width: min(100%, 1280px);
+      height: 90px;
+      margin-top: 12px;
+      font-family: Consolas, monospace;
+      font-size: 14px;
+    }
+    button {
+      margin: 10px 8px 10px 0;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    .muted { color: #aaa; }
+  </style>
+</head>
+<body>
+  <h2>Pick watermark region</h2>
+  <p class="muted">Video: input.mp4 | Resolution: 1470x630</p>
+  <p class="muted">OpenCV GUI fallback: OpenCV(4.13.0) D:\a\opencv-python\opencv-python\opencv\modules\highgui\src\window.cpp:1284: error: (-2:Unspecified error) The function is not implemented. Rebuild the library with Windows, GTK+ 2.x or Cocoa support. If you are on Ubuntu or Debian, install libgtk2.0-dev and pkg-config, then re-run cmake or configure script in function 'cvNamedWindow'</p>
+  <p>Drag on the image to select the watermark area. The output uses original video coordinates.</p>
+  <div class="wrap">
+    <img id="frame" src="input_pick_frame_1000ms.jpg" draggable="false">
+    <canvas id="overlay"></canvas>
+  </div>
+  <div>
+    <button id="copy">Copy config</button>
+    <button id="reset">Reset</button>
+  </div>
+  <textarea id="output" readonly></textarea>
+  <script>
+    const config = {"start": 0.0, "end": 4.0, "name": "a", "width": 1470, "height": 630, "image": "input_pick_frame_1000ms.jpg"};
+    const img = document.getElementById("frame");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+    const output = document.getElementById("output");
+    let start = null;
+    let current = null;
+    let dragging = false;
+
+    function syncCanvas() {
+      const rect = img.getBoundingClientRect();
+      canvas.width = Math.round(rect.width);
+      canvas.height = Math.round(rect.height);
+      draw();
+    }
+
+    function pointFromEvent(event) {
+      const rect = img.getBoundingClientRect();
+      const x = Math.round((event.clientX - rect.left) * img.naturalWidth / rect.width);
+      const y = Math.round((event.clientY - rect.top) * img.naturalHeight / rect.height);
+      return {
+        x: Math.max(0, Math.min(x, img.naturalWidth - 1)),
+        y: Math.max(0, Math.min(y, img.naturalHeight - 1))
+      };
+    }
+
+    function selectedRegion() {
+      if (!start || !current) return null;
+      const x = Math.min(start.x, current.x);
+      const y = Math.min(start.y, current.y);
+      const w = Math.abs(current.x - start.x);
+      const h = Math.abs(current.y - start.y);
+      if (w <= 0 || h <= 0) return null;
+      return {x, y, w, h};
+    }
+
+    function configLine(region) {
+      return `{"start_sec": ${config.start}, "end_sec": ${config.end}, "x": ${region.x}, "y": ${region.y}, "w": ${region.w}, "h": ${region.h}, "name": "${config.name}"}`;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const region = selectedRegion();
+      if (!region) {
+        output.value = "";
+        return;
+      }
+      const sx = region.x * canvas.width / img.naturalWidth;
+      const sy = region.y * canvas.height / img.naturalHeight;
+      const sw = region.w * canvas.width / img.naturalWidth;
+      const sh = region.h * canvas.height / img.naturalHeight;
+      ctx.strokeStyle = "#00ff66";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx, sy, sw, sh);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.fillRect(sx, Math.max(0, sy - 28), 260, 24);
+      ctx.fillStyle = "#00ff66";
+      ctx.font = "16px Consolas, monospace";
+      ctx.fillText(`x=${region.x}, y=${region.y}, w=${region.w}, h=${region.h}`, sx + 6, Math.max(18, sy - 10));
+      output.value = configLine(region);
+    }
+
+    canvas.addEventListener("mousedown", (event) => {
+      start = pointFromEvent(event);
+      current = start;
+      dragging = true;
+      draw();
+    });
+    canvas.addEventListener("mousemove", (event) => {
+      if (!dragging) return;
+      current = pointFromEvent(event);
+      draw();
+    });
+    window.addEventListener("mouseup", (event) => {
+      if (!dragging) return;
+      current = pointFromEvent(event);
+      dragging = false;
+      draw();
+    });
+    document.getElementById("reset").addEventListener("click", () => {
+      start = null;
+      current = null;
+      draw();
+    });
+    document.getElementById("copy").addEventListener("click", async () => {
+      if (!output.value) return;
+      await navigator.clipboard.writeText(output.value);
+    });
+    img.addEventListener("load", syncCanvas);
+    window.addEventListener("resize", syncCanvas);
+  </script>
+</body>
+</html>
